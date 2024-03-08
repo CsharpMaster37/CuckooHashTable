@@ -10,20 +10,20 @@ namespace HashTablesLib
         private IEqualityComparer<TKey> _comparer;
         private Pair<TKey, TValue>[] _items1, _items2;
         private int _capacity;
-        private int p1,p2;
+        private long p1,p2;
         private GetPrimeNumber primeNumber = new GetPrimeNumber();
         private double FillFactor = 0.5;
 
         private int Hash1(TKey key)
         {
-            int hashCode = _comparer.GetHashCode(key) & 0x7FFFFFFF;
-            return ((2* hashCode+3)%p1)%_capacity;
+            long hashCode = _comparer.GetHashCode(key) & 0x7FFFFFFF;
+            return (int)((2* hashCode+3)%p1)%_capacity;
         }
 
         private int Hash2(TKey key)
         {
-            int hashCode = _comparer.GetHashCode(key) & 0x7FFFFFFF;
-            return ((hashCode + 1) % p2) % _capacity;
+            long hashCode = _comparer.GetHashCode(key) & 0x7FFFFFFF;
+            return (int)((hashCode + 1) % p2) % _capacity;
         }
         public CuckooHashTable()
         {
@@ -41,8 +41,36 @@ namespace HashTablesLib
 
         public TValue this[TKey key] 
         {
-            get => throw new NotImplementedException(); 
-            set => throw new NotImplementedException(); 
+            get
+            {
+                if (key == null)
+                    throw new ArgumentNullException();
+                int hash1 = Hash1(key);
+                int hash2 = Hash2(key);
+                if (_items1[hash1] != null && _comparer.Equals(_items1[hash1].Key, key) && !_items1[hash1].IsDeleted())
+                    return _items1[hash1].Value;
+                if (_items2[hash2] != null && _comparer.Equals(_items2[hash2].Key, key) && !_items2[hash2].IsDeleted())
+                    return _items2[hash2].Value;
+                throw new KeyNotFoundException($"The key '{key}' was not found in the hash table.");
+            }
+            set
+            {
+                if (key == null)
+                    throw new ArgumentNullException();
+                int hash1 = Hash1(key);
+                int hash2 = Hash2(key);
+                if (_items1[hash1] != null && _comparer.Equals(_items1[hash1].Key, key) && !_items1[hash1].IsDeleted())
+                {
+                    _items1[hash1] = new Pair<TKey, TValue>(key, value);
+                    return;
+                }
+                if (_items2[hash2] != null && _comparer.Equals(_items2[hash2].Key, key) && !_items2[hash2].IsDeleted())
+                {
+                    _items2[hash2] = new Pair<TKey, TValue>(key, value);
+                    return;
+                }
+                Add(key, value);
+            }
         }
 
         public ICollection<TKey> Keys => throw new NotImplementedException();
@@ -58,8 +86,8 @@ namespace HashTablesLib
                 throw new ArgumentNullException();
             int i = Hash1(key);
             int j = Hash2(key);
-            if (_items1[i] != null && _comparer.Equals(_items1[i].Key, key) ||
-                _items2[j] != null && _comparer.Equals(_items2[j].Key, key))
+            if ((_items1[i] != null && _comparer.Equals(_items1[i].Key, key) && !_items1[i].IsDeleted()) ||
+                (_items2[j] != null && _comparer.Equals(_items2[j].Key, key) && !_items2[j].IsDeleted()))
             {
                 throw new ArgumentException("Such key already exists");
             }
@@ -69,31 +97,33 @@ namespace HashTablesLib
             bool NoCycle = false;
             while (!_comparer.Equals(currentKey, key) || tryNumber == 1)
             {
-                if (_items1[Hash1(currentKey)] == null)
+                int hash1 = Hash1(currentKey);
+                int hash2 = Hash2(currentKey);
+                if (_items1[hash1] == null || _items1[hash1].IsDeleted())
                 {
-                    _items1[Hash1(currentKey)] = new Pair<TKey, TValue>(currentKey, currentValue);
+                    _items1[hash1] = new Pair<TKey, TValue>(currentKey, currentValue);
                     Count++;
                     NoCycle = true;
                     break;
                 }
                 else
                 {
-                    var temp = _items1[Hash1(currentKey)];
-                    _items1[Hash1(currentKey)] = new Pair<TKey, TValue>(currentKey, currentValue);
+                    var temp = _items1[hash1];
+                    _items1[hash1] = new Pair<TKey, TValue>(currentKey, currentValue);
                     currentKey = temp.Key;
                     currentValue = temp.Value;
                 }
-                if (_items2[Hash2(currentKey)] == null)
+                if (_items2[hash2] == null || _items2[hash2].IsDeleted())
                 {
-                    _items2[Hash2(currentKey)] = new Pair<TKey, TValue>(currentKey, currentValue);
+                    _items2[hash2] = new Pair<TKey, TValue>(currentKey, currentValue);
                     Count++;
                     NoCycle = true;
                     break;
                 }
                 else
                 {
-                    var temp = _items2[Hash2(currentKey)];
-                    _items2[Hash2(currentKey)] = new Pair<TKey, TValue>(currentKey, currentValue);
+                    var temp = _items2[hash2];
+                    _items2[hash2] = new Pair<TKey, TValue>(currentKey, currentValue);
                     currentKey = temp.Key;
                     currentValue = temp.Value;
                 }
@@ -116,15 +146,15 @@ namespace HashTablesLib
             _items1 = new Pair<TKey, TValue>[_capacity];
             _items2 = new Pair<TKey, TValue>[_capacity];
             Count = 0;
-            for ( int  i = 0; i < temp1.Length; i++)
+            for (int  i = 0; i < temp1.Length; i++)
             {
-                if (temp1[i] == null)
+                if (temp1[i] == null || !temp1[i].IsDeleted())
                     continue;
                 Add(temp1[i].Key, temp1[i].Value);
             }
             for (int i = 0; i < temp2.Length; i++)
             {
-                if (temp2[i] == null)
+                if (temp2[i] == null || !temp2[i].IsDeleted())
                     continue;
                 Add(temp2[i].Key, temp2[i].Value);
             }
@@ -152,8 +182,8 @@ namespace HashTablesLib
                 throw new ArgumentNullException();
             int i = Hash1(key);
             int j = Hash2(key);
-            if (_items1[i] != null && _comparer.Equals(_items1[i].Key, key) ||
-                _items2[j] != null && _comparer.Equals(_items2[j].Key, key))
+            if ((_items1[i] != null && _comparer.Equals(_items1[i].Key, key) && !_items1[i].IsDeleted()) ||
+                (_items2[j] != null && _comparer.Equals(_items2[j].Key, key) && !_items2[j].IsDeleted()))
             {
                 return true;
             }
@@ -174,12 +204,14 @@ namespace HashTablesLib
         {
             int hash1 = Hash1(key);
             int hash2 = Hash2(key);
-            if (_comparer.Equals(_items1[hash1].Key, key))
+            if (_comparer.Equals(_items1[hash1].Key, key) && !_items1[hash1].IsDeleted())
             {
+                Count--;
                 return _items1[hash1].DeletePair();
             }
-            else if (_comparer.Equals(_items1[hash2].Key, key))
+            else if (_comparer.Equals(_items2[hash2].Key, key) && !_items2[hash2].IsDeleted())
             {
+                Count--;
                 return _items1[hash2].DeletePair();
             }
             return false;
